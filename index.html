@@ -69,12 +69,12 @@
       cursor: pointer;
       transition: transform 0.05s ease, box-shadow 0.1s ease, background 0.1s ease;
       white-space: nowrap;
+      flex: 1;
     }
     button.primary {
       background: #2563eb;
       color: white;
       box-shadow: 0 3px 10px rgba(37, 99, 235, 0.4);
-      flex: 1;
     }
     button.primary:hover {
       background: #1d4ed8;
@@ -83,7 +83,6 @@
     button.secondary {
       background: #e5e7eb;
       color: #111827;
-      flex: 1;
     }
     button.secondary:hover {
       background: #d1d5db;
@@ -95,39 +94,6 @@
       box-shadow: none;
       transform: none;
     }
-
-    /* File input styled as a button */
-    .file-wrapper {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      font-size: 0.85rem;
-    }
-    .file-label {
-      display: inline-block;
-      padding: 8px 12px;
-      border-radius: 999px;
-      background: #10b981;
-      color: #ecfdf5;
-      cursor: pointer;
-      text-align: center;
-      font-size: 0.9rem;
-      box-shadow: 0 3px 10px rgba(16, 185, 129, 0.4);
-      transition: transform 0.05s ease, box-shadow 0.1s ease, background 0.1s ease;
-    }
-    .file-label:hover {
-      background: #059669;
-      transform: translateY(-1px);
-    }
-    #fileInput {
-      display: none;
-    }
-    .file-name {
-      font-size: 0.8rem;
-      color: #4b5563;
-      text-align: center;
-    }
-
     .word-display {
       margin-top: 10px;
       padding: 16px;
@@ -158,16 +124,10 @@
   <div class="app">
     <h1>Free Association Word TTS</h1>
     <p class="description">
-      Choose a <code>.txt</code> file (one word per line), then I’ll speak a random content word every <strong>X</strong> seconds.
+      Uses a built-in <code>words.txt</code> file (one word per line), and speaks a random content word every <strong>X</strong> seconds.
     </p>
 
     <div class="controls">
-      <div class="file-wrapper">
-        <label for="fileInput" class="file-label">Choose words file...</label>
-        <input id="fileInput" type="file" accept=".txt" />
-        <div id="fileName" class="file-name">No file selected</div>
-      </div>
-
       <label for="intervalInput">
         Interval (seconds):
         <input id="intervalInput" type="number" min="1" value="3" />
@@ -181,23 +141,19 @@
     </div>
 
     <div id="wordDisplay" class="word-display">
-      Choose a words file to begin
+      Loading words from <code>words.txt</code>...
     </div>
     <div id="status" class="status"></div>
   </div>
 
   <script>
-    // DOM elements
     const wordDisplay = document.getElementById("wordDisplay");
     const intervalInput = document.getElementById("intervalInput");
     const startBtn = document.getElementById("startBtn");
     const stopBtn = document.getElementById("stopBtn");
     const nextBtn = document.getElementById("nextBtn");
     const statusEl = document.getElementById("status");
-    const fileInput = document.getElementById("fileInput");
-    const fileNameEl = document.getElementById("fileName");
 
-    // Word data
     let words = [];
     let loaded = false;
     let timerId = null;
@@ -224,68 +180,41 @@
       "what","which","who","whom","whose","why","how","there","here"
     ]);
 
-    function resetSession() {
-      if (timerId !== null) {
-        clearInterval(timerId);
-        timerId = null;
-      }
-      if ("speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-      }
-      startBtn.disabled = false;
-      stopBtn.disabled = true;
-    }
+    async function loadWords() {
+      if (loaded) return;
+      try {
+        const res = await fetch("words.txt");
+        if (!res.ok) {
+          throw new Error("HTTP " + res.status);
+        }
+        const text = await res.text();
 
-    function loadWordsFromText(text) {
-      // Split by any whitespace (newline, tabs, spaces) just in case
-      const rawWords = text
-        .split(/\s+/)
-        .map(w => w.trim().toLowerCase())
-        .filter(Boolean);
+        // line-separated, but \s+ allows for any whitespace
+        const rawWords = text
+          .split(/\s+/)
+          .map(w => w.trim().toLowerCase())
+          .filter(Boolean);
 
-      const unique = Array.from(new Set(rawWords));
-      words = unique.filter(w => !stopWords.has(w) && w.length > 2);
+        const unique = Array.from(new Set(rawWords));
+        words = unique.filter(w => !stopWords.has(w) && w.length > 2);
 
-      if (!words.length) {
-        loaded = false;
-        statusEl.textContent = "No usable words after filtering. Check your file or the stopword list.";
+        if (!words.length) {
+          statusEl.textContent = "No usable words after filtering. Check words.txt or stopword list.";
+          statusEl.classList.add("error");
+          wordDisplay.textContent = "No usable words";
+          return;
+        }
+
+        loaded = true;
+        statusEl.textContent = `Loaded ${words.length} words from words.txt.`;
+        statusEl.classList.remove("error");
+        wordDisplay.textContent = "Ready. Press Start.";
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = "Error loading words.txt. Make sure it is in the same folder as index.html.";
         statusEl.classList.add("error");
-        wordDisplay.textContent = "No usable words";
-        return;
+        wordDisplay.textContent = "Error loading words.txt";
       }
-
-      loaded = true;
-      statusEl.textContent = `Loaded ${words.length} words for free association.`;
-      statusEl.classList.remove("error");
-      wordDisplay.textContent = "Ready. Press Start.";
-    }
-
-    function handleFileChange(event) {
-      const file = event.target.files[0];
-      resetSession();
-      words = [];
-      loaded = false;
-      lastWord = "";
-
-      if (!file) {
-        fileNameEl.textContent = "No file selected";
-        statusEl.textContent = "";
-        return;
-      }
-
-      fileNameEl.textContent = file.name;
-      statusEl.textContent = "Loading words from file...";
-      statusEl.classList.remove("error");
-
-      const reader = new FileReader();
-      reader.onload = () => {
-        loadWordsFromText(reader.result);
-      };
-      reader.onerror = () => {
-        statusEl.textContent = "Error reading file.";
-        statusEl.classList.add("error");
-      };
-      reader.readAsText(file);
     }
 
     function getRandomWord() {
@@ -311,7 +240,7 @@
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(word);
       utterance.lang = "en-US";
-      utterance.rate = 0.9; // slightly slower for clarity
+      utterance.rate = 0.9;
       window.speechSynthesis.speak(utterance);
     }
 
@@ -322,11 +251,8 @@
     }
 
     async function startSession() {
-      if (!loaded || !words.length) {
-        statusEl.textContent = "Please choose a valid words file first.";
-        statusEl.classList.add("error");
-        return;
-      }
+      await loadWords();
+      if (!loaded || !words.length) return;
 
       const seconds = parseFloat(intervalInput.value);
       if (isNaN(seconds) || seconds <= 0) {
@@ -355,22 +281,27 @@
     }
 
     function stopSession() {
-      resetSession();
+      if (timerId !== null) {
+        clearInterval(timerId);
+        timerId = null;
+      }
+      if ("speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+
       statusEl.textContent = "Stopped.";
       statusEl.classList.remove("error");
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
     }
 
     // Event listeners
-    fileInput.addEventListener("change", handleFileChange);
     startBtn.addEventListener("click", startSession);
     stopBtn.addEventListener("click", stopSession);
 
-    nextBtn.addEventListener("click", () => {
-      if (!loaded || !words.length) {
-        statusEl.textContent = "Please choose a valid words file first.";
-        statusEl.classList.add("error");
-        return;
-      }
+    nextBtn.addEventListener("click", async () => {
+      await loadWords();
+      if (!loaded || !words.length) return;
       showAndSpeakRandomWord();
       if (timerId === null) {
         statusEl.textContent = "Spoke one word (not running automatically).";
@@ -379,8 +310,12 @@
     });
 
     window.addEventListener("beforeunload", () => {
-      resetSession();
+      if (timerId !== null) clearInterval(timerId);
+      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
     });
+
+    // Try to auto-load words when the page opens (non-blocking)
+    loadWords();
   </script>
 </body>
 </html>
