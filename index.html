@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Free Association Word TTS</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f5;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    .app {
+      background: #ffffff;
+      padding: 24px 28px;
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+      max-width: 460px;
+      width: 100%;
+    }
+    h1 {
+      font-size: 1.4rem;
+      margin-top: 0;
+      margin-bottom: 12px;
+      text-align: center;
+    }
+    .description {
+      font-size: 0.9rem;
+      color: #555;
+      text-align: center;
+      margin-bottom: 18px;
+    }
+    .controls {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    label {
+      font-size: 0.9rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+    input[type="number"] {
+      width: 90px;
+      padding: 6px 8px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      font-size: 0.9rem;
+    }
+    .buttons {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+    button {
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: none;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: transform 0.05s ease, box-shadow 0.1s ease, background 0.1s ease;
+      white-space: nowrap;
+    }
+    button.primary {
+      background: #2563eb;
+      color: white;
+      box-shadow: 0 3px 10px rgba(37, 99, 235, 0.4);
+      flex: 1;
+    }
+    button.primary:hover {
+      background: #1d4ed8;
+      transform: translateY(-1px);
+    }
+    button.secondary {
+      background: #e5e7eb;
+      color: #111827;
+      flex: 1;
+    }
+    button.secondary:hover {
+      background: #d1d5db;
+      transform: translateY(-1px);
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: default;
+      box-shadow: none;
+      transform: none;
+    }
+
+    /* File input styled as a button */
+    .file-wrapper {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 0.85rem;
+    }
+    .file-label {
+      display: inline-block;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: #10b981;
+      color: #ecfdf5;
+      cursor: pointer;
+      text-align: center;
+      font-size: 0.9rem;
+      box-shadow: 0 3px 10px rgba(16, 185, 129, 0.4);
+      transition: transform 0.05s ease, box-shadow 0.1s ease, background 0.1s ease;
+    }
+    .file-label:hover {
+      background: #059669;
+      transform: translateY(-1px);
+    }
+    #fileInput {
+      display: none;
+    }
+    .file-name {
+      font-size: 0.8rem;
+      color: #4b5563;
+      text-align: center;
+    }
+
+    .word-display {
+      margin-top: 10px;
+      padding: 16px;
+      border-radius: 12px;
+      background: #111827;
+      color: #f9fafb;
+      text-align: center;
+      font-size: 2rem;
+      font-weight: 600;
+      min-height: 3em;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      word-break: break-word;
+    }
+    .status {
+      margin-top: 8px;
+      font-size: 0.85rem;
+      color: #4b5563;
+      text-align: center;
+    }
+    .status.error {
+      color: #b91c1c;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <h1>Free Association Word TTS</h1>
+    <p class="description">
+      Choose a <code>.txt</code> file (one word per line), then I’ll speak a random content word every <strong>X</strong> seconds.
+    </p>
+
+    <div class="controls">
+      <div class="file-wrapper">
+        <label for="fileInput" class="file-label">Choose words file...</label>
+        <input id="fileInput" type="file" accept=".txt" />
+        <div id="fileName" class="file-name">No file selected</div>
+      </div>
+
+      <label for="intervalInput">
+        Interval (seconds):
+        <input id="intervalInput" type="number" min="1" value="3" />
+      </label>
+
+      <div class="buttons">
+        <button id="startBtn" class="primary">Start</button>
+        <button id="stopBtn" class="secondary" disabled>Stop</button>
+        <button id="nextBtn" class="secondary">Next now</button>
+      </div>
+    </div>
+
+    <div id="wordDisplay" class="word-display">
+      Choose a words file to begin
+    </div>
+    <div id="status" class="status"></div>
+  </div>
+
+  <script>
+    // DOM elements
+    const wordDisplay = document.getElementById("wordDisplay");
+    const intervalInput = document.getElementById("intervalInput");
+    const startBtn = document.getElementById("startBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const nextBtn = document.getElementById("nextBtn");
+    const statusEl = document.getElementById("status");
+    const fileInput = document.getElementById("fileInput");
+    const fileNameEl = document.getElementById("fileName");
+
+    // Word data
+    let words = [];
+    let loaded = false;
+    let timerId = null;
+    let lastWord = "";
+
+    // Connection words / function words to exclude.
+    const stopWords = new Set([
+      "a","an","the",
+      "and","or","but","if","then","than","so","because","as","while","though","although","until","since",
+      "when","where","before","after",
+      "above","below","over","under","into","onto","from","to","of","in","on","at","by","for","with",
+      "about","between","through","without","within","against","among","across","behind","beyond",
+      "up","down","out","off","again","further","once",
+      "all","any","both","each","few","many","more","most","other","some","such","no","nor","not",
+      "only","own","same","too","very",
+      "can","could","shall","should","will","would","may","might","must",
+      "do","does","did",
+      "is","am","are","was","were","be","been","being",
+      "have","has","had","having",
+      "i","you","he","she","it","we","they",
+      "me","him","her","us","them",
+      "my","your","his","its","our","their",
+      "this","that","these","those",
+      "what","which","who","whom","whose","why","how","there","here"
+    ]);
+
+    function resetSession() {
+      if (timerId !== null) {
+        clearInterval(timerId);
+        timerId = null;
+      }
+      if ("speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+    }
+
+    function loadWordsFromText(text) {
+      // Split by any whitespace (newline, tabs, spaces) just in case
+      const rawWords = text
+        .split(/\s+/)
+        .map(w => w.trim().toLowerCase())
+        .filter(Boolean);
+
+      const unique = Array.from(new Set(rawWords));
+      words = unique.filter(w => !stopWords.has(w) && w.length > 2);
+
+      if (!words.length) {
+        loaded = false;
+        statusEl.textContent = "No usable words after filtering. Check your file or the stopword list.";
+        statusEl.classList.add("error");
+        wordDisplay.textContent = "No usable words";
+        return;
+      }
+
+      loaded = true;
+      statusEl.textContent = `Loaded ${words.length} words for free association.`;
+      statusEl.classList.remove("error");
+      wordDisplay.textContent = "Ready. Press Start.";
+    }
+
+    function handleFileChange(event) {
+      const file = event.target.files[0];
+      resetSession();
+      words = [];
+      loaded = false;
+      lastWord = "";
+
+      if (!file) {
+        fileNameEl.textContent = "No file selected";
+        statusEl.textContent = "";
+        return;
+      }
+
+      fileNameEl.textContent = file.name;
+      statusEl.textContent = "Loading words from file...";
+      statusEl.classList.remove("error");
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        loadWordsFromText(reader.result);
+      };
+      reader.onerror = () => {
+        statusEl.textContent = "Error reading file.";
+        statusEl.classList.add("error");
+      };
+      reader.readAsText(file);
+    }
+
+    function getRandomWord() {
+      if (!words.length) return "(word list not loaded)";
+      if (words.length === 1) return words[0];
+
+      let word;
+      do {
+        const idx = Math.floor(Math.random() * words.length);
+        word = words[idx];
+      } while (word === lastWord);
+
+      lastWord = word;
+      return word;
+    }
+
+    function speakWord(word) {
+      if (!("speechSynthesis" in window)) {
+        statusEl.textContent = "Text-to-speech is not supported in this browser.";
+        statusEl.classList.add("error");
+        return;
+      }
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(word);
+      utterance.lang = "en-US";
+      utterance.rate = 0.9; // slightly slower for clarity
+      window.speechSynthesis.speak(utterance);
+    }
+
+    function showAndSpeakRandomWord() {
+      const word = getRandomWord();
+      wordDisplay.textContent = word;
+      speakWord(word);
+    }
+
+    async function startSession() {
+      if (!loaded || !words.length) {
+        statusEl.textContent = "Please choose a valid words file first.";
+        statusEl.classList.add("error");
+        return;
+      }
+
+      const seconds = parseFloat(intervalInput.value);
+      if (isNaN(seconds) || seconds <= 0) {
+        statusEl.textContent = "Please enter a valid interval (seconds > 0).";
+        statusEl.classList.add("error");
+        return;
+      }
+
+      if (!("speechSynthesis" in window)) {
+        statusEl.textContent = "Your browser does not support speech synthesis (TTS).";
+        statusEl.classList.add("error");
+        return;
+      }
+
+      if (timerId !== null) {
+        clearInterval(timerId);
+      }
+
+      showAndSpeakRandomWord();
+      statusEl.textContent = `Running every ${seconds} second(s)...`;
+      statusEl.classList.remove("error");
+
+      timerId = setInterval(showAndSpeakRandomWord, seconds * 1000);
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+    }
+
+    function stopSession() {
+      resetSession();
+      statusEl.textContent = "Stopped.";
+      statusEl.classList.remove("error");
+    }
+
+    // Event listeners
+    fileInput.addEventListener("change", handleFileChange);
+    startBtn.addEventListener("click", startSession);
+    stopBtn.addEventListener("click", stopSession);
+
+    nextBtn.addEventListener("click", () => {
+      if (!loaded || !words.length) {
+        statusEl.textContent = "Please choose a valid words file first.";
+        statusEl.classList.add("error");
+        return;
+      }
+      showAndSpeakRandomWord();
+      if (timerId === null) {
+        statusEl.textContent = "Spoke one word (not running automatically).";
+        statusEl.classList.remove("error");
+      }
+    });
+
+    window.addEventListener("beforeunload", () => {
+      resetSession();
+    });
+  </script>
+</body>
+</html>
